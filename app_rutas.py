@@ -72,7 +72,7 @@ def obtener_coordenadas(direccion, localidad):
         pass
     return None, None
 
-# Función para extraer ventanas horarias desde el texto de observaciones (ej: "08:00 a 12:00" o "8:30-16:00")
+# Función para extraer ventanas horarias desde el texto de observaciones
 def extraer_ventana_horaria(texto):
     if not isinstance(texto, str):
         return None, None
@@ -138,12 +138,12 @@ def calcular_ruta_osrm(coordenadas):
         pass
     return None, None, []
 
-# Generador de PDF profesional de 2 páginas
+# Generador de PDF profesional de 2 páginas con Horario en Página 1 y Tira de Reparto en Página 2
 def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, regreso_estimado, chofer_nombre):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     
     # ==========================================
-    # PÁGINA 1: CRONOGRAMA Y CARGA LIFO
+    # PÁGINA 1: CRONOGRAMA, VENTANAS HORARIAS Y LIFO
     # ==========================================
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -195,19 +195,20 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         
     pdf.set_y(y_start + card_h + 6)
     
-    # SECCIÓN 1: CRONOGRAMA
+    # SECCIÓN 1: CRONOGRAMA CON COLUMNA DE HORARIO
     pdf.set_font('Arial', 'B', 10)
     pdf.set_text_color(30, 41, 59)
-    pdf.cell(0, 5, '1. Cronograma Secuencial y Horarios', 0, 1, 'L')
+    pdf.cell(0, 5, '1. Cronograma Secuencial y Ventanas Horarias', 0, 1, 'L')
     pdf.ln(1)
     
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(16, 6, 'ETAPA', 1, 0, 'C', fill=True)
-    pdf.cell(20, 6, 'N° CLI', 1, 0, 'C', fill=True)
-    pdf.cell(56, 6, 'CLIENTE / FANTASIA', 1, 0, 'L', fill=True)
-    pdf.cell(58, 6, 'DIRECCION Y LOCALIDAD', 1, 0, 'L', fill=True)
+    pdf.cell(15, 6, 'ETAPA', 1, 0, 'C', fill=True)
+    pdf.cell(18, 6, 'N° CLI', 1, 0, 'C', fill=True)
+    pdf.cell(45, 6, 'CLIENTE / FANTASIA', 1, 0, 'L', fill=True)
+    pdf.cell(48, 6, 'DIRECCION Y LOCALIDAD', 1, 0, 'L', fill=True)
+    pdf.cell(24, 6, 'HORARIO', 1, 0, 'C', fill=True)  # Columna de horario agregada
     pdf.cell(20, 6, 'LLEGADA', 1, 0, 'C', fill=True)
     pdf.cell(20, 6, 'SALIDA', 1, 1, 'C', fill=True)
     
@@ -219,15 +220,18 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         dire = str(row['Dirección'])
         llegada = str(row['Llegada'])
         salida = str(row['Partida'])
+        horario_str = str(row.get('Horario', '-'))
         
         if "Salida" in punto:
             etapa = "INICIO"
             n_cli = "-"
             nombre = "Depósito Lanús"
+            horario_str = "-"
         elif "Regreso" in punto:
             etapa = "FIN"
             n_cli = "-"
             nombre = "Depósito Lanús"
+            horario_str = "-"
         else:
             etapa = str(idx)
             row_idx = idx - 1
@@ -237,10 +241,11 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
                 n_cli = "-"
             nombre = str(row['Punto de Ruta']).split(":", 1)[-1].strip() if ":" in str(row['Punto de Ruta']) else str(row['Punto de Ruta'])
             
-        pdf.cell(16, 5, etapa, 1, 0, 'C')
-        pdf.cell(20, 5, n_cli, 1, 0, 'C')
-        pdf.cell(56, 5, nombre[:30], 1, 0, 'L')
-        pdf.cell(58, 5, dire[:36], 1, 0, 'L')
+        pdf.cell(15, 5, etapa, 1, 0, 'C')
+        pdf.cell(18, 5, n_cli, 1, 0, 'C')
+        pdf.cell(45, 5, nombre[:24], 1, 0, 'L')
+        pdf.cell(48, 5, dire[:30], 1, 0, 'L')
+        pdf.cell(24, 5, horario_str, 1, 0, 'C')
         pdf.cell(20, 5, llegada, 1, 0, 'C')
         pdf.cell(20, 5, salida, 1, 1, 'C')
         
@@ -278,7 +283,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         pdf.cell(88, 5, dir_loc, 1, 1, 'L')
 
     # ==========================================
-    # PÁGINA 2: TIRA DE REPARTO (CON COLUMNA DE HORARIO)
+    # PÁGINA 2: TIRA DE REPARTO
     # ==========================================
     pdf.add_page()
     
@@ -308,14 +313,13 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(65, 6, '', 'B', 1, 'L')
     pdf.ln(6)
     
-    # Anchos ajustados para incluir la columna "Horario" (Total = 190 mm)
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
     
     pdf.cell(18, 7, 'Factura', 1, 0, 'C', fill=True)
     pdf.cell(48, 7, 'Cliente', 1, 0, 'L', fill=True)
-    pdf.cell(25, 7, 'Horario', 1, 0, 'C', fill=True)  # Columna nueva de ventana horaria
+    pdf.cell(25, 7, 'Horario', 1, 0, 'C', fill=True)
     pdf.cell(8, 7, 'C', 1, 0, 'C', fill=True)
     pdf.cell(8, 7, 'F', 1, 0, 'C', fill=True)
     pdf.cell(20, 7, 'Transporte', 1, 0, 'C', fill=True)
@@ -326,26 +330,22 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.set_font('Arial', '', 8)
     pdf.set_text_color(15, 23, 42)
     
-    # Rellenar filas de clientes ordenados (con la ventana horaria automática)
     for idx, row in ruta_df.iterrows():
         nombre_cliente = str(row.get('Cliente', ''))[:28]
-        
-        # Extraer la ventana horaria de observaciones para imprimirla
         obs_texto = str(row.get('Observaciones', ''))
         t_ini, t_fin = extraer_ventana_horaria(obs_texto)
         horario_str = f"{t_ini.strftime('%H:%M')}-{t_fin.strftime('%H:%M')}" if (t_ini and t_fin) else ""
         
-        pdf.cell(18, 6, '', 1, 0, 'C')            # Factura (en blanco)
-        pdf.cell(48, 6, nombre_cliente, 1, 0, 'L') # Cliente (orden óptimo)
-        pdf.cell(25, 6, horario_str, 1, 0, 'C')    # Ventana horaria automática
-        pdf.cell(8, 6, '', 1, 0, 'C')             # C
-        pdf.cell(8, 6, '', 1, 0, 'C')             # F
-        pdf.cell(20, 6, '', 1, 0, 'C')            # Transporte
-        pdf.cell(20, 6, '', 1, 0, 'C')            # H. Llegada
-        pdf.cell(20, 6, '', 1, 0, 'C')            # H. Salida
-        pdf.cell(23, 6, '', 1, 1, 'C')            # Observaciones
+        pdf.cell(18, 6, '', 1, 0, 'C')
+        pdf.cell(48, 6, nombre_cliente, 1, 0, 'L')
+        pdf.cell(25, 6, horario_str, 1, 0, 'C')
+        pdf.cell(8, 6, '', 1, 0, 'C')
+        pdf.cell(8, 6, '', 1, 0, 'C')
+        pdf.cell(20, 6, '', 1, 0, 'C')
+        pdf.cell(20, 6, '', 1, 0, 'C')
+        pdf.cell(20, 6, '', 1, 0, 'C')
+        pdf.cell(23, 6, '', 1, 1, 'C')
         
-    # Filas vacías extra para anotaciones manuales adicionales
     for _ in range(6):
         pdf.cell(18, 6, '', 1, 0, 'C')
         pdf.cell(48, 6, '', 1, 0, 'L')
@@ -448,6 +448,7 @@ if df is not None and not df.empty:
                                 cronograma_data.append({
                                     "Punto de Ruta": "Salida: Depósito Lanús",
                                     "Dirección": f"{DEPOT_DIRECCION}, {DEPOT_LOCALIDAD}",
+                                    "Horario": "-",
                                     "Llegada": dt_salida.strftime("%H:%M"),
                                     "Actividad": "Salida del camión",
                                     "Partida": dt_salida.strftime("%H:%M")
@@ -461,6 +462,7 @@ if df is not None and not df.empty:
                                     
                                     obs_texto = str(row.get('Observaciones', ''))
                                     t_ini, t_fin = extraer_ventana_horaria(obs_texto)
+                                    horario_str = f"{t_ini.strftime('%H:%M')}-{t_fin.strftime('%H:%M')}" if (t_ini and t_fin) else "-"
                                     
                                     actividad_txt = f"Descarga ({TIEMPO_DESCARGA_MIN} min)"
                                     if t_ini and t_fin:
@@ -484,6 +486,7 @@ if df is not None and not df.empty:
                                     cronograma_data.append({
                                         "Punto de Ruta": f"Parada {i+1}: {nombre_cli}",
                                         "Dirección": f"{dir_cli}",
+                                        "Horario": horario_str,
                                         "Llegada": llegada_cliente.strftime("%H:%M"),
                                         "Actividad": actividad_txt,
                                         "Partida": partida_cliente.strftime("%H:%M")
@@ -496,6 +499,7 @@ if df is not None and not df.empty:
                                 cronograma_data.append({
                                     "Punto de Ruta": "Regreso: Depósito Lanús",
                                     "Dirección": f"{DEPOT_DIRECCION}, {DEPOT_LOCALIDAD}",
+                                    "Horario": "-",
                                     "Llegada": tiempo_acumulado.strftime("%H:%M"),
                                     "Actividad": "Fin de recorrido / Retorno",
                                     "Partida": "-"
