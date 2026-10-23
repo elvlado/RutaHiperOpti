@@ -2,14 +2,15 @@ import streamlit as st
 import pandas as pd
 import urllib.parse
 import requests
+import re
 from datetime import datetime, timedelta, time
 from fpdf import FPDF
 import io
 
 st.set_page_config(page_title="Optimizador de Rutas, Tiempos y Carga LIFO", layout="wide")
 
-st.title("🚚 Optimizador Automático de Rutas y Carga LIFO")
-st.markdown("Planificación inteligente con optimización automática de paradas, salida y retorno en Depósito (Lanús).")
+st.title("🚚 Optimizador Automático de Rutas, Ventanas Horarias y Carga LIFO")
+st.markdown("Planificación inteligente con optimización de paradas, respeto de horarios de recepción y retorno a Depósito (Lanús).")
 
 # ID de la planilla de Google Sheets
 SPREADSHEET_ID = "1trxZGEEPmnSmXoYDXi30NBnzx5Z4IWnkHsSSpauJYc4"
@@ -71,6 +72,21 @@ def obtener_coordenadas(direccion, localidad):
         pass
     return None, None
 
+# Función para extraer ventanas horarias desde el texto de observaciones (ej: "08:00 a 12:00" o "8:30-16:00")
+def extraer_ventana_horaria(texto):
+    if not isinstance(texto, str):
+        return None, None
+    match = re.search(r'(\d{1,2}:\d{2})\s*(?:a|-)\s*(\d{1,2}:\d{2})', texto)
+    if match:
+        h_ini, h_fin = match.groups()
+        try:
+            t_ini = datetime.strptime(h_ini, "%H:%M").time()
+            t_fin = datetime.strptime(h_fin, "%H:%M").time()
+            return t_ini, t_fin
+        except ValueError:
+            pass
+    return None, None
+
 # Algoritmo de Optimización Automática (TSP - Vecino Más Cercano)
 def optimizar_orden_paradas(depot_coord, clientes_coords):
     todos = [depot_coord] + clientes_coords + [depot_coord]
@@ -127,14 +143,14 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     
     # ==========================================
-    # PÁGINA 1: CRONOGRAMA DE ENTREGA Y CARGA LIFO
+    # PÁGINA 1: CRONOGRAMA Y CARGA LIFO
     # ==========================================
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
     
     pdf.set_font('Arial', 'B', 15)
     pdf.set_text_color(30, 41, 59)
-    pdf.cell(110, 7, 'Hoja de Ruta de Entregas (Optimizado)', 0, 0, 'L')
+    pdf.cell(110, 7, 'Hoja de Ruta y Ventanas Horarias', 0, 0, 'L')
     
     pdf.set_font('Arial', '', 8)
     pdf.set_text_color(100, 116, 139)
@@ -145,10 +161,10 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.set_xy(10, pdf.get_y() + 2)
     pdf.set_font('Arial', '', 9)
     pdf.set_text_color(71, 85, 105)
-    pdf.cell(0, 5, 'Planificacion de distribucion y tiempos logisticos en ruta', 0, 1, 'L')
+    pdf.cell(0, 5, 'Ruta optimizada contemplando tiempos y restricciones horarias', 0, 1, 'L')
     pdf.ln(3)
     
-    # 4 Tarjetas de Métricas
+    # Tarjetas de Métricas
     card_w = 44
     card_h = 16
     y_start = pdf.get_y()
@@ -179,21 +195,21 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         
     pdf.set_y(y_start + card_h + 6)
     
-    # SECCIÓN 1: CRONOGRAMA SECUENCIAL DE ENTREGAS
+    # SECCIÓN 1: CRONOGRAMA
     pdf.set_font('Arial', 'B', 10)
     pdf.set_text_color(30, 41, 59)
-    pdf.cell(0, 5, '1. Cronograma Secuencial de Entregas', 0, 1, 'L')
+    pdf.cell(0, 5, '1. Cronograma Secuencial y Horarios', 0, 1, 'L')
     pdf.ln(1)
     
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
-    pdf.cell(18, 6, 'ETAPA', 1, 0, 'C', fill=True)
-    pdf.cell(22, 6, 'N° CLIENTE', 1, 0, 'C', fill=True)
-    pdf.cell(58, 6, 'CLIENTE / NOMBRE FANTASIA', 1, 0, 'L', fill=True)
-    pdf.cell(60, 6, 'DIRECCION Y LOCALIDAD', 1, 0, 'L', fill=True)
-    pdf.cell(16, 6, 'LLEGADA', 1, 0, 'C', fill=True)
-    pdf.cell(16, 6, 'OPERACION', 1, 1, 'C', fill=True)
+    pdf.cell(16, 6, 'ETAPA', 1, 0, 'C', fill=True)
+    pdf.cell(20, 6, 'N° CLI', 1, 0, 'C', fill=True)
+    pdf.cell(56, 6, 'CLIENTE / FANTASIA', 1, 0, 'L', fill=True)
+    pdf.cell(58, 6, 'DIRECCION Y LOCALIDAD', 1, 0, 'L', fill=True)
+    pdf.cell(20, 6, 'LLEGADA', 1, 0, 'C', fill=True)
+    pdf.cell(20, 6, 'SALIDA', 1, 1, 'C', fill=True)
     
     pdf.set_font('Arial', '', 8)
     pdf.set_text_color(15, 23, 42)
@@ -202,7 +218,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         punto = str(row['Punto de Ruta'])
         dire = str(row['Dirección'])
         llegada = str(row['Llegada'])
-        actividad = str(row['Actividad'])
+        salida = str(row['Partida'])
         
         if "Salida" in punto:
             etapa = "INICIO"
@@ -221,16 +237,16 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
                 n_cli = "-"
             nombre = str(row['Punto de Ruta']).split(":", 1)[-1].strip() if ":" in str(row['Punto de Ruta']) else str(row['Punto de Ruta'])
             
-        pdf.cell(18, 5, etapa, 1, 0, 'C')
-        pdf.cell(22, 5, n_cli, 1, 0, 'C')
-        pdf.cell(58, 5, nombre[:32], 1, 0, 'L')
-        pdf.cell(60, 5, dire[:38], 1, 0, 'L')
-        pdf.cell(16, 5, llegada, 1, 0, 'C')
-        pdf.cell(16, 5, "Descarga" if "Descarga" in actividad else ("Salida" if "Salida" in actividad else "Retorno"), 1, 1, 'C')
+        pdf.cell(16, 5, etapa, 1, 0, 'C')
+        pdf.cell(20, 5, n_cli, 1, 0, 'C')
+        pdf.cell(56, 5, nombre[:30], 1, 0, 'L')
+        pdf.cell(58, 5, dire[:36], 1, 0, 'L')
+        pdf.cell(20, 5, llegada, 1, 0, 'C')
+        pdf.cell(20, 5, salida, 1, 1, 'C')
         
-    pdf.ln(5)
+    pdf.ln(4)
     
-    # SECCIÓN 2: ORDEN DE CARGA EN CAMIÓN (LIFO)
+    # SECCIÓN 2: LIFO
     pdf.set_font('Arial', 'B', 10)
     pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 5, '2. Orden de Carga en Camion (LIFO)', 0, 1, 'L')
@@ -262,21 +278,19 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         pdf.cell(88, 5, dir_loc, 1, 1, 'L')
 
     # ==========================================
-    # PÁGINA 2: TIRA DE REPARTO (EN BLANCO PARA COMPLETAR A MANO)
+    # PÁGINA 2: TIRA DE REPARTO
     # ==========================================
     pdf.add_page()
     
-    # Encabezado Tira de Reparto
     pdf.set_font('Arial', 'B', 14)
     pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 7, 'TIRA DE REPARTO', 0, 1, 'C')
     pdf.ln(3)
     
-    # Datos superiores en blanco para rellenar a mano
     pdf.set_font('Arial', 'B', 9)
     pdf.cell(30, 6, 'Chofer:', 0, 0, 'L')
     pdf.set_font('Arial', '', 9)
-    pdf.cell(65, 6, '', 'B', 0, 'L') # En blanco
+    pdf.cell(65, 6, '', 'B', 0, 'L')
     
     pdf.set_font('Arial', 'B', 9)
     pdf.cell(30, 6, 'Fecha:', 0, 0, 'L')
@@ -294,7 +308,6 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(65, 6, '', 'B', 1, 'L')
     pdf.ln(6)
     
-    # Tabla de Tira de Reparto
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
@@ -311,20 +324,17 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.set_font('Arial', '', 8)
     pdf.set_text_color(15, 23, 42)
     
-    # Rellenar solo con los nombres de los clientes en orden óptimo; el resto de celdas en blanco
     for idx, row in ruta_df.iterrows():
         nombre_cliente = str(row.get('Cliente', ''))[:32]
+        pdf.cell(22, 6, '', 1, 0, 'C')
+        pdf.cell(55, 6, nombre_cliente, 1, 0, 'L')
+        pdf.cell(10, 6, '', 1, 0, 'C')
+        pdf.cell(10, 6, '', 1, 0, 'C')
+        pdf.cell(25, 6, '', 1, 0, 'C')
+        pdf.cell(22, 6, '', 1, 0, 'C')
+        pdf.cell(22, 6, '', 1, 0, 'C')
+        pdf.cell(24, 6, '', 1, 1, 'C')
         
-        pdf.cell(22, 6, '', 1, 0, 'C') # Factura en blanco
-        pdf.cell(55, 6, nombre_cliente, 1, 0, 'L') # Cliente optimizado
-        pdf.cell(10, 6, '', 1, 0, 'C') # C en blanco
-        pdf.cell(10, 6, '', 1, 0, 'C') # F en blanco
-        pdf.cell(25, 6, '', 1, 0, 'C') # Transporte en blanco
-        pdf.cell(22, 6, '', 1, 0, 'C') # H. Llegada en blanco
-        pdf.cell(22, 6, '', 1, 0, 'C') # H. Salida en blanco
-        pdf.cell(24, 6, '', 1, 1, 'C') # Observaciones en blanco
-        
-    # Filas vacías extra adicionales para anotaciones manuales
     for _ in range(6):
         pdf.cell(22, 6, '', 1, 0, 'C')
         pdf.cell(55, 6, '', 1, 0, 'L')
@@ -367,28 +377,29 @@ if df is not None and not df.empty:
         chofer = row.get('Chofer_Origen', '')
         nro = str(row.get('Nro', '')).replace('.0', '')
         nombre = str(row.get('Cliente', ''))
-        return f"[{chofer}] {nro} - {nombre}"
+        obs = str(row.get('Observaciones', ''))
+        return f"[{chofer}] {nro} - {nombre} ({obs[:30]})"
 
     clientes_seleccionados = st.multiselect(
-        "Busca por número de cliente o por nombre:",
+        "Busca por número de cliente, nombre u horario en observaciones:",
         options=df.index.tolist(),
         format_func=format_opcion
     )
 
     if clientes_seleccionados:
         ruta_df_inicial = df.loc[clientes_seleccionados].reset_index(drop=True)
-        cols_mostrar = [c for c in ['Nro', 'Cliente', 'Fantasia', 'Direccion', 'Localidad', 'Telefono', 'Chofer_Origen'] if c in ruta_df_inicial.columns]
+        cols_mostrar = [c for c in ['Nro', 'Cliente', 'Fantasia', 'Direccion', 'Localidad', 'Observaciones', 'Chofer_Origen'] if c in ruta_df_inicial.columns]
 
         st.markdown("---")
-        st.subheader("📊 Métricas y Optimización Automática de Ruta")
+        st.subheader("📊 Métricas, Optimización y Control de Horarios")
         
         TIEMPO_DESCARGA_MIN = 30
         col_dir = 'Direccion'
         col_loc = 'Localidad'
 
         if col_dir in df.columns and col_loc in df.columns:
-            if st.button("🚀 Calcular y Optimizar Ruta Automática (TSP)"):
-                with st.spinner("Geolocalizando clientes, calculando matriz de distancias y optimizando recorrido para la flota..."):
+            if st.button("🚀 Calcular Ruta Óptima y Validar Horarios"):
+                with st.spinner("Geolocalizando, optimizando ruta y analizando ventanas horarias..."):
                     lat_depot, lon_depot = obtener_coordenadas(DEPOT_DIRECCION, DEPOT_LOCALIDAD)
                     
                     if not lat_depot or not lon_depot:
@@ -417,17 +428,78 @@ if df is not None and not df.empty:
                             km, duracion_conduccion_min, tramos = calcular_ruta_osrm(coordenadas_ruta)
                             
                             if km is not None:
-                                total_descarga_min = len(ruta_df) * TIEMPO_DESCARGA_MIN
-                                tiempo_total_min = duracion_conduccion_min + total_descarga_min
-                                
                                 dt_salida = datetime.combine(datetime.today(), hora_salida)
-                                dt_llegada = dt_salida + timedelta(minutes=tiempo_total_min)
+                                
+                                # Generar cronograma calculando esperas por ventanas horarias
+                                cronograma_data = []
+                                tiempo_acumulado = dt_salida
+                                
+                                cronograma_data.append({
+                                    "Punto de Ruta": "Salida: Depósito Lanús",
+                                    "Dirección": f"{DEPOT_DIRECCION}, {DEPOT_LOCALIDAD}",
+                                    "Llegada": dt_salida.strftime("%H:%M"),
+                                    "Actividad": "Salida del camión",
+                                    "Partida": dt_salida.strftime("%H:%M")
+                                })
+                                
+                                total_espera_min = 0
+                                for i, (idx, row) in enumerate(ruta_df.iterrows()):
+                                    tramo_min = tramos[i] if i < len(tramos) else 0
+                                    tiempo_acumulado += timedelta(minutes=tramo_min)
+                                    llegada_cliente = tiempo_acumulado
+                                    
+                                    # Verificar ventana horaria en Observaciones
+                                    obs_texto = str(row.get('Observaciones', ''))
+                                    t_ini, t_fin = extraer_ventana_horaria(obs_texto)
+                                    
+                                    actividad_txt = f"Descarga ({TIEMPO_DESCARGA_MIN} min)"
+                                    if t_ini and t_fin:
+                                        llegada_time = llegada_cliente.time()
+                                        if llegada_time < t_ini:
+                                            # Esperar apertura
+                                            apertura_dt = datetime.combine(llegada_cliente.date(), t_ini)
+                                            espera_min = (apertura_dt - llegada_cliente).total_seconds() / 60.0
+                                            total_espera_min += espera_min
+                                            tiempo_acumulado = apertura_dt
+                                            llegada_cliente = apertura_dt
+                                            actividad_txt += f" [Esperó apertura {t_ini.strftime('%H:%M')}]"
+                                        elif llegada_time > t_fin:
+                                            actividad_txt += f" ⚠️ TARDE (Cierra {t_fin.strftime('%H:%M')})"
+                                    
+                                    tiempo_acumulado += timedelta(minutes=TIEMPO_DESCARGA_MIN)
+                                    partida_cliente = tiempo_acumulado
+                                    
+                                    nombre_cli = str(row.get('Cliente', f"Cliente {i+1}"))
+                                    dir_cli = str(row[col_dir])
+                                    
+                                    cronograma_data.append({
+                                        "Punto de Ruta": f"Parada {i+1}: {nombre_cli}",
+                                        "Dirección": f"{dir_cli}",
+                                        "Llegada": llegada_cliente.strftime("%H:%M"),
+                                        "Actividad": actividad_txt,
+                                        "Partida": partida_cliente.strftime("%H:%M")
+                                    })
+                                
+                                if len(tramos) >= len(ruta_df) + 1:
+                                    tramo_regreso = tramos[len(ruta_df)]
+                                    tiempo_acumulado += timedelta(minutes=tramo_regreso)
+                                    
+                                cronograma_data.append({
+                                    "Punto de Ruta": "Regreso: Depósito Lanús",
+                                    "Dirección": f"{DEPOT_DIRECCION}, {DEPOT_LOCALIDAD}",
+                                    "Llegada": tiempo_acumulado.strftime("%H:%M"),
+                                    "Actividad": "Fin de recorrido / Retorno",
+                                    "Partida": "-"
+                                })
+                                
+                                tiempo_total_viaje_min = (tiempo_acumulado - dt_salida).total_seconds() / 60.0
+                                total_descarga_min = len(ruta_df) * TIEMPO_DESCARGA_MIN
                                 
                                 m1, m2, m3, m4 = st.columns(4)
-                                m1.metric("Distancia Total Optimizada", f"{km} km")
-                                m2.metric("Tiempo de Conducción", f"{round(duracion_conduccion_min)} min")
-                                m3.metric("Tiempo de Descarga", f"{total_descarga_min} min ({len(ruta_df)} paradas)")
-                                m4.metric("Regreso Estimado a Lanús", dt_llegada.strftime("%H:%M hs"))
+                                m1.metric("Distancia Total", f"{km} km")
+                                m2.metric("Conducción + Esperas", f"{round(duracion_conduccion_min + total_espera_min)} min")
+                                m3.metric("Tiempo Descarga", f"{total_descarga_min} min")
+                                m4.metric("Regreso a Lanús", tiempo_acumulado.strftime("%H:%M hs"))
                                 
                                 st.markdown("---")
                                 col1, col2 = st.columns(2)
@@ -445,61 +517,19 @@ if df is not None and not df.empty:
                                     lifo_display.index = lifo_display.index + 1
                                     st.dataframe(lifo_display)
                                 
-                                st.markdown("### 🕒 Cronograma Secuencial Optimizado")
-                                cronograma_data = []
-                                tiempo_acumulado = dt_salida
-                                
-                                cronograma_data.append({
-                                    "Punto de Ruta": "Salida: Depósito Lanús",
-                                    "Dirección": f"{DEPOT_DIRECCION}, {DEPOT_LOCALIDAD}",
-                                    "Llegada": dt_salida.strftime("%H:%M"),
-                                    "Actividad": "Salida del camión",
-                                    "Partida": dt_salida.strftime("%H:%M")
-                                })
-                                
-                                for i, (idx, row) in enumerate(ruta_df.iterrows()):
-                                    tramo_min = tramos[i] if i < len(tramos) else 0
-                                    tiempo_acumulado += timedelta(minutes=tramo_min)
-                                    llegada_cliente = tiempo_acumulado
-                                    
-                                    tiempo_acumulado += timedelta(minutes=TIEMPO_DESCARGA_MIN)
-                                    partida_cliente = tiempo_acumulado
-                                    
-                                    nombre_cli = str(row.get('Cliente', f"Cliente {i+1}"))
-                                    dir_cli = str(row[col_dir])
-                                    
-                                    cronograma_data.append({
-                                        "Punto de Ruta": f"Parada {i+1}: {nombre_cli}",
-                                        "Dirección": f"{dir_cli}",
-                                        "Llegada": llegada_cliente.strftime("%H:%M"),
-                                        "Actividad": f"Descarga ({TIEMPO_DESCARGA_MIN} min)",
-                                        "Partida": partida_cliente.strftime("%H:%M")
-                                    })
-                                
-                                if len(tramos) >= len(ruta_df) + 1:
-                                    tramo_regreso = tramos[len(ruta_df)]
-                                    tiempo_acumulado += timedelta(minutes=tramo_regreso)
-                                    
-                                cronograma_data.append({
-                                    "Punto de Ruta": "Regreso: Depósito Lanús",
-                                    "Dirección": f"{DEPOT_DIRECCION}, {DEPOT_LOCALIDAD}",
-                                    "Llegada": tiempo_acumulado.strftime("%H:%M"),
-                                    "Actividad": "Fin de recorrido / Retorno",
-                                    "Partida": "-"
-                                })
-                                
+                                st.markdown("### 🕒 Cronograma Secuencial y Control de Horarios")
                                 cron_df = pd.DataFrame(cronograma_data)
                                 st.dataframe(cron_df, use_container_width=True)
                                 
                                 choferes_unicos = ruta_df['Chofer_Origen'].unique()
                                 chofer_str = ", ".join(choferes_unicos) if len(choferes_unicos) <= 2 else "Mixto / Varios"
                                 
-                                # Botón PDF actualizado
-                                pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), dt_llegada.strftime("%H:%M"), chofer_str)
+                                # Botón PDF
+                                pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), tiempo_acumulado.strftime("%H:%M"), chofer_str)
                                 st.download_button(
                                     label="📄 Descargar Hoja de Ruta, LIFO y Tira de Reparto en PDF",
                                     data=pdf_data,
-                                    file_name=f"Tira_de_Reparto_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                    file_name=f"Tira_de_Reparto_Horarios_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                                     mime="application/pdf"
                                 )
                             else:
