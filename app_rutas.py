@@ -72,25 +72,26 @@ def obtener_coordenadas(direccion, localidad):
         pass
     return None, None
 
-# Función flexible para extraer ventanas horarias (ej: "8 a 12", "08:00-17:00", "9-13")
+# Función para extraer el texto literal de observaciones y detectar opcionalmente horas para cálculo interno
 def extraer_ventana_horaria(texto):
-    if not isinstance(texto, str):
+    if not isinstance(texto, str) or not texto.strip() or texto.lower() == 'nan':
         return None, None, "-"
+    
+    # Intentamos detectar horas internamente para el cálculo de espera en ruta (si el formato lo permite)
     match = re.search(r'(\d{1,2}(?::\d{2})?)\s*(?:a|-)\s*(\d{1,2}(?::\d{2})?)', texto, re.IGNORECASE)
+    t_ini, t_fin = None, None
     if match:
-        raw_str = match.group(0)
         s_ini, s_fin = match.groups()
-        if ':' not in s_ini:
-            s_ini += ":00"
-        if ':' not in s_fin:
-            s_fin += ":00"
+        if ':' not in s_ini: s_ini += ":00"
+        if ':' not in s_fin: s_fin += ":00"
         try:
             t_ini = datetime.strptime(s_ini, "%H:%M").time()
             t_fin = datetime.strptime(s_fin, "%H:%M").time()
-            return t_ini, t_fin, raw_str
         except ValueError:
             pass
-    return None, None, "-"
+            
+    # Devolvemos el texto LITERAL de la celda de observaciones tal cual está escrito
+    return t_ini, t_fin, texto.strip()
 
 # Algoritmo de Optimización Automática (TSP - Vecino Más Cercano)
 def optimizar_orden_paradas(depot_coord, clientes_coords):
@@ -143,12 +144,12 @@ def calcular_ruta_osrm(coordenadas):
         pass
     return None, None, []
 
-# Generador de PDF profesional de 2 páginas con Horario en Página 1 y Tira de Reparto en Página 2
+# Generador de PDF profesional de 2 páginas
 def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, regreso_estimado, chofer_nombre):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     
     # ==========================================
-    # PÁGINA 1: CRONOGRAMA, VENTANAS HORARIAS Y LIFO
+    # PÁGINA 1: CRONOGRAMA Y VENTANAS HORARIAS
     # ==========================================
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -169,7 +170,6 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(0, 5, 'Ruta optimizada contemplando tiempos y restricciones horarias', 0, 1, 'L')
     pdf.ln(3)
     
-    # Tarjetas de Métricas
     card_w = 44
     card_h = 16
     y_start = pdf.get_y()
@@ -200,7 +200,6 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         
     pdf.set_y(y_start + card_h + 6)
     
-    # SECCIÓN 1: CRONOGRAMA CON COLUMNA DE HORARIO
     pdf.set_font('Arial', 'B', 10)
     pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 5, '1. Cronograma Secuencial y Ventanas Horarias', 0, 1, 'L')
@@ -225,7 +224,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         dire = str(row['Dirección'])
         llegada = str(row['Llegada'])
         salida = str(row['Partida'])
-        horario_str = str(row.get('Horario', '-'))
+        horario_str = str(row.get('Horario', '-'))[:15]
         
         if "Salida" in punto:
             etapa = "INICIO"
@@ -256,7 +255,6 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         
     pdf.ln(4)
     
-    # SECCIÓN 2: LIFO
     pdf.set_font('Arial', 'B', 10)
     pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 5, '2. Orden de Carga en Camion (LIFO)', 0, 1, 'L')
@@ -342,7 +340,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         
         pdf.cell(18, 6, '', 1, 0, 'C')
         pdf.cell(48, 6, nombre_cliente, 1, 0, 'L')
-        pdf.cell(25, 6, horario_str, 1, 0, 'C')
+        pdf.cell(25, 6, horario_str[:15], 1, 0, 'C')
         pdf.cell(8, 6, '', 1, 0, 'C')
         pdf.cell(8, 6, '', 1, 0, 'C')
         pdf.cell(20, 6, '', 1, 0, 'C')
