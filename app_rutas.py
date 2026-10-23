@@ -278,7 +278,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         pdf.cell(88, 5, dir_loc, 1, 1, 'L')
 
     # ==========================================
-    # PÁGINA 2: TIRA DE REPARTO
+    # PÁGINA 2: TIRA DE REPARTO (CON COLUMNA DE HORARIO)
     # ==========================================
     pdf.add_page()
     
@@ -308,42 +308,54 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(65, 6, '', 'B', 1, 'L')
     pdf.ln(6)
     
+    # Anchos ajustados para incluir la columna "Horario" (Total = 190 mm)
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
     
-    pdf.cell(22, 7, 'Factura', 1, 0, 'C', fill=True)
-    pdf.cell(55, 7, 'Cliente', 1, 0, 'L', fill=True)
-    pdf.cell(10, 7, 'C', 1, 0, 'C', fill=True)
-    pdf.cell(10, 7, 'F', 1, 0, 'C', fill=True)
-    pdf.cell(25, 7, 'Transporte', 1, 0, 'C', fill=True)
-    pdf.cell(22, 7, 'H. Llegada', 1, 0, 'C', fill=True)
-    pdf.cell(22, 7, 'H. Salida', 1, 0, 'C', fill=True)
-    pdf.cell(24, 7, 'Observaciones', 1, 1, 'C', fill=True)
+    pdf.cell(18, 7, 'Factura', 1, 0, 'C', fill=True)
+    pdf.cell(48, 7, 'Cliente', 1, 0, 'L', fill=True)
+    pdf.cell(25, 7, 'Horario', 1, 0, 'C', fill=True)  # Columna nueva de ventana horaria
+    pdf.cell(8, 7, 'C', 1, 0, 'C', fill=True)
+    pdf.cell(8, 7, 'F', 1, 0, 'C', fill=True)
+    pdf.cell(20, 7, 'Transporte', 1, 0, 'C', fill=True)
+    pdf.cell(20, 7, 'H. Llegada', 1, 0, 'C', fill=True)
+    pdf.cell(20, 7, 'H. Salida', 1, 0, 'C', fill=True)
+    pdf.cell(23, 7, 'Observ.', 1, 1, 'C', fill=True)
     
     pdf.set_font('Arial', '', 8)
     pdf.set_text_color(15, 23, 42)
     
+    # Rellenar filas de clientes ordenados (con la ventana horaria automática)
     for idx, row in ruta_df.iterrows():
-        nombre_cliente = str(row.get('Cliente', ''))[:32]
-        pdf.cell(22, 6, '', 1, 0, 'C')
-        pdf.cell(55, 6, nombre_cliente, 1, 0, 'L')
-        pdf.cell(10, 6, '', 1, 0, 'C')
-        pdf.cell(10, 6, '', 1, 0, 'C')
-        pdf.cell(25, 6, '', 1, 0, 'C')
-        pdf.cell(22, 6, '', 1, 0, 'C')
-        pdf.cell(22, 6, '', 1, 0, 'C')
-        pdf.cell(24, 6, '', 1, 1, 'C')
+        nombre_cliente = str(row.get('Cliente', ''))[:28]
         
+        # Extraer la ventana horaria de observaciones para imprimirla
+        obs_texto = str(row.get('Observaciones', ''))
+        t_ini, t_fin = extraer_ventana_horaria(obs_texto)
+        horario_str = f"{t_ini.strftime('%H:%M')}-{t_fin.strftime('%H:%M')}" if (t_ini and t_fin) else ""
+        
+        pdf.cell(18, 6, '', 1, 0, 'C')            # Factura (en blanco)
+        pdf.cell(48, 6, nombre_cliente, 1, 0, 'L') # Cliente (orden óptimo)
+        pdf.cell(25, 6, horario_str, 1, 0, 'C')    # Ventana horaria automática
+        pdf.cell(8, 6, '', 1, 0, 'C')             # C
+        pdf.cell(8, 6, '', 1, 0, 'C')             # F
+        pdf.cell(20, 6, '', 1, 0, 'C')            # Transporte
+        pdf.cell(20, 6, '', 1, 0, 'C')            # H. Llegada
+        pdf.cell(20, 6, '', 1, 0, 'C')            # H. Salida
+        pdf.cell(23, 6, '', 1, 1, 'C')            # Observaciones
+        
+    # Filas vacías extra para anotaciones manuales adicionales
     for _ in range(6):
-        pdf.cell(22, 6, '', 1, 0, 'C')
-        pdf.cell(55, 6, '', 1, 0, 'L')
-        pdf.cell(10, 6, '', 1, 0, 'C')
-        pdf.cell(10, 6, '', 1, 0, 'C')
+        pdf.cell(18, 6, '', 1, 0, 'C')
+        pdf.cell(48, 6, '', 1, 0, 'L')
         pdf.cell(25, 6, '', 1, 0, 'C')
-        pdf.cell(22, 6, '', 1, 0, 'C')
-        pdf.cell(22, 6, '', 1, 0, 'C')
-        pdf.cell(24, 6, '', 1, 1, 'C')
+        pdf.cell(8, 6, '', 1, 0, 'C')
+        pdf.cell(8, 6, '', 1, 0, 'C')
+        pdf.cell(20, 6, '', 1, 0, 'C')
+        pdf.cell(20, 6, '', 1, 0, 'C')
+        pdf.cell(20, 6, '', 1, 0, 'C')
+        pdf.cell(23, 6, '', 1, 1, 'C')
 
     pdf_bytes = pdf.output()
     pdf_buffer = io.BytesIO(pdf_bytes)
@@ -430,7 +442,6 @@ if df is not None and not df.empty:
                             if km is not None:
                                 dt_salida = datetime.combine(datetime.today(), hora_salida)
                                 
-                                # Generar cronograma calculando esperas por ventanas horarias
                                 cronograma_data = []
                                 tiempo_acumulado = dt_salida
                                 
@@ -448,7 +459,6 @@ if df is not None and not df.empty:
                                     tiempo_acumulado += timedelta(minutes=tramo_min)
                                     llegada_cliente = tiempo_acumulado
                                     
-                                    # Verificar ventana horaria en Observaciones
                                     obs_texto = str(row.get('Observaciones', ''))
                                     t_ini, t_fin = extraer_ventana_horaria(obs_texto)
                                     
@@ -456,7 +466,6 @@ if df is not None and not df.empty:
                                     if t_ini and t_fin:
                                         llegada_time = llegada_cliente.time()
                                         if llegada_time < t_ini:
-                                            # Esperar apertura
                                             apertura_dt = datetime.combine(llegada_cliente.date(), t_ini)
                                             espera_min = (apertura_dt - llegada_cliente).total_seconds() / 60.0
                                             total_espera_min += espera_min
@@ -524,7 +533,6 @@ if df is not None and not df.empty:
                                 choferes_unicos = ruta_df['Chofer_Origen'].unique()
                                 chofer_str = ", ".join(choferes_unicos) if len(choferes_unicos) <= 2 else "Mixto / Varios"
                                 
-                                # Botón PDF
                                 pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), tiempo_acumulado.strftime("%H:%M"), chofer_str)
                                 st.download_button(
                                     label="📄 Descargar Hoja de Ruta, LIFO y Tira de Reparto en PDF",
