@@ -72,20 +72,25 @@ def obtener_coordenadas(direccion, localidad):
         pass
     return None, None
 
-# Función para extraer ventanas horarias desde el texto de observaciones
+# Función flexible para extraer ventanas horarias (ej: "8 a 12", "08:00-17:00", "9-13")
 def extraer_ventana_horaria(texto):
     if not isinstance(texto, str):
-        return None, None
-    match = re.search(r'(\d{1,2}:\d{2})\s*(?:a|-)\s*(\d{1,2}:\d{2})', texto)
+        return None, None, "-"
+    match = re.search(r'(\d{1,2}(?::\d{2})?)\s*(?:a|-)\s*(\d{1,2}(?::\d{2})?)', texto, re.IGNORECASE)
     if match:
-        h_ini, h_fin = match.groups()
+        raw_str = match.group(0)
+        s_ini, s_fin = match.groups()
+        if ':' not in s_ini:
+            s_ini += ":00"
+        if ':' not in s_fin:
+            s_fin += ":00"
         try:
-            t_ini = datetime.strptime(h_ini, "%H:%M").time()
-            t_fin = datetime.strptime(h_fin, "%H:%M").time()
-            return t_ini, t_fin
+            t_ini = datetime.strptime(s_ini, "%H:%M").time()
+            t_fin = datetime.strptime(s_fin, "%H:%M").time()
+            return t_ini, t_fin, raw_str
         except ValueError:
             pass
-    return None, None
+    return None, None, "-"
 
 # Algoritmo de Optimización Automática (TSP - Vecino Más Cercano)
 def optimizar_orden_paradas(depot_coord, clientes_coords):
@@ -208,7 +213,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(18, 6, 'N° CLI', 1, 0, 'C', fill=True)
     pdf.cell(45, 6, 'CLIENTE / FANTASIA', 1, 0, 'L', fill=True)
     pdf.cell(48, 6, 'DIRECCION Y LOCALIDAD', 1, 0, 'L', fill=True)
-    pdf.cell(24, 6, 'HORARIO', 1, 0, 'C', fill=True)  # Columna de horario agregada
+    pdf.cell(24, 6, 'HORARIO', 1, 0, 'C', fill=True)
     pdf.cell(20, 6, 'LLEGADA', 1, 0, 'C', fill=True)
     pdf.cell(20, 6, 'SALIDA', 1, 1, 'C', fill=True)
     
@@ -333,8 +338,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     for idx, row in ruta_df.iterrows():
         nombre_cliente = str(row.get('Cliente', ''))[:28]
         obs_texto = str(row.get('Observaciones', ''))
-        t_ini, t_fin = extraer_ventana_horaria(obs_texto)
-        horario_str = f"{t_ini.strftime('%H:%M')}-{t_fin.strftime('%H:%M')}" if (t_ini and t_fin) else ""
+        _, _, horario_str = extraer_ventana_horaria(obs_texto)
         
         pdf.cell(18, 6, '', 1, 0, 'C')
         pdf.cell(48, 6, nombre_cliente, 1, 0, 'L')
@@ -461,8 +465,7 @@ if df is not None and not df.empty:
                                     llegada_cliente = tiempo_acumulado
                                     
                                     obs_texto = str(row.get('Observaciones', ''))
-                                    t_ini, t_fin = extraer_ventana_horaria(obs_texto)
-                                    horario_str = f"{t_ini.strftime('%H:%M')}-{t_fin.strftime('%H:%M')}" if (t_ini and t_fin) else "-"
+                                    t_ini, t_fin, horario_str = extraer_ventana_horaria(obs_texto)
                                     
                                     actividad_txt = f"Descarga ({TIEMPO_DESCARGA_MIN} min)"
                                     if t_ini and t_fin:
