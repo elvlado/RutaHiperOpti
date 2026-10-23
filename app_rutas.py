@@ -72,12 +72,11 @@ def obtener_coordenadas(direccion, localidad):
         pass
     return None, None
 
-# Función para extraer el texto literal de observaciones y detectar opcionalmente horas para cálculo interno
+# Función para extraer el texto literal de observaciones
 def extraer_ventana_horaria(texto):
     if not isinstance(texto, str) or not texto.strip() or texto.lower() == 'nan':
         return None, None, "-"
     
-    # Intentamos detectar horas internamente para el cálculo de espera en ruta (si el formato lo permite)
     match = re.search(r'(\d{1,2}(?::\d{2})?)\s*(?:a|-)\s*(\d{1,2}(?::\d{2})?)', texto, re.IGNORECASE)
     t_ini, t_fin = None, None
     if match:
@@ -90,7 +89,6 @@ def extraer_ventana_horaria(texto):
         except ValueError:
             pass
             
-    # Devolvemos el texto LITERAL de la celda de observaciones tal cual está escrito
     return t_ini, t_fin, texto.strip()
 
 # Algoritmo de Optimización Automática (TSP - Vecino Más Cercano)
@@ -205,14 +203,15 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(0, 5, '1. Cronograma Secuencial y Ventanas Horarias', 0, 1, 'L')
     pdf.ln(1)
     
+    # Anchos ajustados: Cliente más corto (35mm), Horario más ancho (34mm) -> Total 190mm
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
     pdf.cell(15, 6, 'ETAPA', 1, 0, 'C', fill=True)
     pdf.cell(18, 6, 'N° CLI', 1, 0, 'C', fill=True)
-    pdf.cell(45, 6, 'CLIENTE / FANTASIA', 1, 0, 'L', fill=True)
+    pdf.cell(35, 6, 'CLIENTE / FANTASIA', 1, 0, 'L', fill=True)
     pdf.cell(48, 6, 'DIRECCION Y LOCALIDAD', 1, 0, 'L', fill=True)
-    pdf.cell(24, 6, 'HORARIO', 1, 0, 'C', fill=True)
+    pdf.cell(34, 6, 'HORARIO', 1, 0, 'C', fill=True)
     pdf.cell(20, 6, 'LLEGADA', 1, 0, 'C', fill=True)
     pdf.cell(20, 6, 'SALIDA', 1, 1, 'C', fill=True)
     
@@ -224,7 +223,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
         dire = str(row['Dirección'])
         llegada = str(row['Llegada'])
         salida = str(row['Partida'])
-        horario_str = str(row.get('Horario', '-'))[:15]
+        horario_str = str(row.get('Horario', '-'))
         
         if "Salida" in punto:
             etapa = "INICIO"
@@ -247,9 +246,9 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
             
         pdf.cell(15, 5, etapa, 1, 0, 'C')
         pdf.cell(18, 5, n_cli, 1, 0, 'C')
-        pdf.cell(45, 5, nombre[:24], 1, 0, 'L')
+        pdf.cell(35, 5, nombre[:18], 1, 0, 'L')  # Tronco ajustado para el ancho de 35mm
         pdf.cell(48, 5, dire[:30], 1, 0, 'L')
-        pdf.cell(24, 5, horario_str, 1, 0, 'C')
+        pdf.cell(34, 5, horario_str[:22], 1, 0, 'C') # Ancho de 34mm para ver los horarios completos
         pdf.cell(20, 5, llegada, 1, 0, 'C')
         pdf.cell(20, 5, salida, 1, 1, 'C')
         
