@@ -420,6 +420,8 @@ if df is not None and not df.empty:
                     else:
                         clientes_coords = []
                         validos_indices = []
+                        latitudes = []
+                        longitudes = []
                         direcciones_fallidas = []
                         
                         for idx, row in ruta_df_inicial.iterrows():
@@ -427,10 +429,17 @@ if df is not None and not df.empty:
                             if lat and lon:
                                 clientes_coords.append((lat, lon))
                                 validos_indices.append(idx)
+                                latitudes.append(lat)
+                                longitudes.append(lon)
                             else:
                                 direcciones_fallidas.append(str(row.get('Cliente', 'Desconocido')))
-                            # Pausa obligatoria de 1.1s para evitar bloqueo por límite de peticiones de OpenStreetMap
+                                latitudes.append(None)
+                                longitudes.append(None)
                             time.sleep(1.1)
+                        
+                        # Guardamos las coordenadas en columnas temporales para no reconsultar el mapa
+                        ruta_df_inicial['temp_lat'] = latitudes
+                        ruta_df_inicial['temp_lon'] = longitudes
                         
                         if direcciones_fallidas:
                             st.warning(f"⚠️ Las siguientes direcciones no pudieron geolocalizarse correctamente y fueron omitidas: {', '.join(direcciones_fallidas)}")
@@ -443,8 +452,7 @@ if df is not None and not df.empty:
                             
                             coordenadas_ruta = [(lat_depot, lon_depot)]
                             for idx, row in ruta_df.iterrows():
-                                lat, lon = obtener_coordenadas(row[col_dir], row[col_loc])
-                                coordenadas_ruta.append((lat, lon))
+                                coordenadas_ruta.append((row['temp_lat'], row['temp_lon']))
                             coordenadas_ruta.append((lat_depot, lon_depot))
                             
                             km, duracion_conduccion_min, tramos = calcular_ruta_osrm(coordenadas_ruta)
