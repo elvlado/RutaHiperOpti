@@ -549,7 +549,7 @@ if df is not None and not df.empty:
                                 pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), tiempo_acumulado.strftime("%H:%M"), chofer_str)
                                 st.download_button(
                                     label="📄 Descargar Hoja de Ruta, LIFO y Tira de Reparto en PDF",
-                               +     data=pdf_data,
+                                    data=pdf_data,
                                     file_name=f"Tira_de_Reparto_Horarios_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                                     mime="application/pdf"
                                 )
