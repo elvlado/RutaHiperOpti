@@ -56,20 +56,28 @@ def cargar_todos_los_clientes():
         return pd.concat(dfs, ignore_index=True, sort=False), errores
     return pd.DataFrame(), errores
 
-# Función mejorada con doble intento (fallback) para evitar que fallen direcciones
+# Función de búsqueda inteligente con variantes automáticas (ej: manejo de plurales/singulares y limpieza)
 @st.cache_data(ttl=3600)
 def obtener_coordenadas(direccion, localidad):
     if not isinstance(direccion, str) or not direccion.strip():
         return None, None
     
+    dir_limpia = direccion.strip()
+    # Generar alternativa sin la 's' final por si el mapa tiene la calle en singular (ej: Pasteurs -> Pasteur)
+    dir_sin_s = re.sub(r's\b', '', dir_limpia, flags=re.IGNORECASE) if dir_limpia.lower().endswith('s') else None
+    
+    loc_limpia = localidad.strip() if isinstance(localidad, str) and localidad.lower() != 'nan' else ""
+    
     queries = []
-    # Intento 1: Dirección completa con localidad
-    if isinstance(localidad, str) and localidad.strip() and localidad.lower() != 'nan':
-        queries.append(f"{direccion}, {localidad}, Buenos Aires, Argentina")
-    
-    # Intento 2: Solo dirección y provincia (por si la localidad ingresada confunde al mapa)
-    queries.append(f"{direccion}, Buenos Aires, Argentina")
-    
+    if loc_limpia:
+        queries.append(f"{dir_limpia}, {loc_limpia}, Buenos Aires, Argentina")
+        if dir_sin_s and dir_sin_s != dir_limpia:
+            queries.append(f"{dir_sin_s}, {loc_limpia}, Buenos Aires, Argentina")
+            
+    queries.append(f"{dir_limpia}, Buenos Aires, Argentina")
+    if dir_sin_s and dir_sin_s != dir_limpia:
+        queries.append(f"{dir_sin_s}, Buenos Aires, Argentina")
+        
     headers = {'User-Agent': 'OptimizadorRutasLogistica/1.0'}
     
     for query in queries:
@@ -423,7 +431,7 @@ if df is not None and not df.empty:
 
         if col_dir in df.columns and col_loc in df.columns:
             if st.button("🚀 Calcular Ruta Óptima y Validar Horarios"):
-                with st.spinner("Geolocalizando, optimizando ruta y analizando ventanas horarias (con respaldo de búsqueda)..."):
+                with st.spinner("Geolocalizando con variantes inteligentes, optimizando ruta y analizando ventanas horarias..."):
                     lat_depot, lon_depot = obtener_coordenadas(DEPOT_DIRECCION, DEPOT_LOCALIDAD)
                     
                     if not lat_depot or not lon_depot:
@@ -452,7 +460,7 @@ if df is not None and not df.empty:
                         ruta_df_inicial['temp_lon'] = longitudes
                         
                         if direcciones_fallidas:
-                            st.warning(f"⚠️ Las siguientes direcciones no pudieron geolocalizarse correctamente (revisa si la calle o altura está bien escrita en el Google Sheet): {', '.join(direcciones_fallidas)}")
+                            st.warning(f"⚠️ Las siguientes direcciones no pudieron geolocalizarse (revisa si la calle o altura está bien escrita en el Google Sheet): {', '.join(direcciones_fallidas)}")
                         
                         if len(clientes_coords) >= 1:
                             orden_optimizado = optimizar_orden_paradas((lat_depot, lon_depot), clientes_coords)
