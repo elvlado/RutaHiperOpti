@@ -3,7 +3,8 @@ import pandas as pd
 import urllib.parse
 import requests
 import re
-from datetime import datetime, timedelta, time
+import time
+from datetime import datetime, timedelta, time as dtime
 from fpdf import FPDF
 import io
 
@@ -203,7 +204,6 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     pdf.cell(0, 5, '1. Cronograma Secuencial y Ventanas Horarias', 0, 1, 'L')
     pdf.ln(1)
     
-    # Anchos ajustados: Cliente más corto (35mm), Horario más ancho (34mm) -> Total 190mm
     pdf.set_font('Arial', 'B', 8)
     pdf.set_fill_color(30, 41, 59)
     pdf.set_text_color(255, 255, 255)
@@ -246,9 +246,9 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
             
         pdf.cell(15, 5, etapa, 1, 0, 'C')
         pdf.cell(18, 5, n_cli, 1, 0, 'C')
-        pdf.cell(35, 5, nombre[:18], 1, 0, 'L')  # Tronco ajustado para el ancho de 35mm
+        pdf.cell(35, 5, nombre[:18], 1, 0, 'L')
         pdf.cell(48, 5, dire[:30], 1, 0, 'L')
-        pdf.cell(34, 5, horario_str[:22], 1, 0, 'C') # Ancho de 34mm para ver los horarios completos
+        pdf.cell(34, 5, horario_str[:22], 1, 0, 'C')
         pdf.cell(20, 5, llegada, 1, 0, 'C')
         pdf.cell(20, 5, salida, 1, 1, 'C')
         
@@ -364,7 +364,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     return pdf_buffer
 
 st.sidebar.header("⚙️ Configuración del Viaje")
-hora_salida = st.sidebar.time_input("⏰ Hora de salida del camión:", value=time(8, 0))
+hora_salida = st.sidebar.time_input("⏰ Hora de salida del camión:", value=dtime(8, 0))
 
 if st.sidebar.button("🔄 Actualizar Datos desde Google Sheets"):
     st.cache_data.clear()
@@ -412,7 +412,7 @@ if df is not None and not df.empty:
 
         if col_dir in df.columns and col_loc in df.columns:
             if st.button("🚀 Calcular Ruta Óptima y Validar Horarios"):
-                with st.spinner("Geolocalizando, optimizando ruta y analizando ventanas horarias..."):
+                with st.spinner("Geolocalizando, optimizando ruta y analizando ventanas horarias (con pausa de seguridad para mapas)..."):
                     lat_depot, lon_depot = obtener_coordenadas(DEPOT_DIRECCION, DEPOT_LOCALIDAD)
                     
                     if not lat_depot or not lon_depot:
@@ -420,11 +420,20 @@ if df is not None and not df.empty:
                     else:
                         clientes_coords = []
                         validos_indices = []
+                        direcciones_fallidas = []
+                        
                         for idx, row in ruta_df_inicial.iterrows():
                             lat, lon = obtener_coordenadas(row[col_dir], row[col_loc])
                             if lat and lon:
                                 clientes_coords.append((lat, lon))
                                 validos_indices.append(idx)
+                            else:
+                                direcciones_fallidas.append(str(row.get('Cliente', 'Desconocido')))
+                            # Pausa obligatoria de 1.1s para evitar bloqueo por límite de peticiones de OpenStreetMap
+                            time.sleep(1.1)
+                        
+                        if direcciones_fallidas:
+                            st.warning(f"⚠️ Las siguientes direcciones no pudieron geolocalizarse correctamente y fueron omitidas: {', '.join(direcciones_fallidas)}")
                         
                         if len(clientes_coords) >= 1:
                             orden_optimizado = optimizar_orden_paradas((lat_depot, lon_depot), clientes_coords)
@@ -540,7 +549,7 @@ if df is not None and not df.empty:
                                 pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), tiempo_acumulado.strftime("%H:%M"), chofer_str)
                                 st.download_button(
                                     label="📄 Descargar Hoja de Ruta, LIFO y Tira de Reparto en PDF",
-                                    data=pdf_data,
+                               +     data=pdf_data,
                                     file_name=f"Tira_de_Reparto_Horarios_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                                     mime="application/pdf"
                                 )
