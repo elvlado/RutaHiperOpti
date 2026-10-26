@@ -56,21 +56,32 @@ def cargar_todos_los_clientes():
         return pd.concat(dfs, ignore_index=True, sort=False), errores
     return pd.DataFrame(), errores
 
-# Función para obtener coordenadas usando OpenStreetMap (Nominatim)
+# Función mejorada con doble intento (fallback) para evitar que fallen direcciones
 @st.cache_data(ttl=3600)
 def obtener_coordenadas(direccion, localidad):
-    if not isinstance(direccion, str) or not isinstance(localidad, str):
+    if not isinstance(direccion, str) or not direccion.strip():
         return None, None
-    query = f"{direccion}, {localidad}, Buenos Aires, Argentina"
-    url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query)}&format=json&limit=1"
+    
+    queries = []
+    # Intento 1: Dirección completa con localidad
+    if isinstance(localidad, str) and localidad.strip() and localidad.lower() != 'nan':
+        queries.append(f"{direccion}, {localidad}, Buenos Aires, Argentina")
+    
+    # Intento 2: Solo dirección y provincia (por si la localidad ingresada confunde al mapa)
+    queries.append(f"{direccion}, Buenos Aires, Argentina")
+    
     headers = {'User-Agent': 'OptimizadorRutasLogistica/1.0'}
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        data = response.json()
-        if data:
-            return float(data[0]['lat']), float(data[0]['lon'])
-    except Exception:
-        pass
+    
+    for query in queries:
+        url = f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(query)}&format=json&limit=1"
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            data = response.json()
+            if data:
+                return float(data[0]['lat']), float(data[0]['lon'])
+        except Exception:
+            pass
+            
     return None, None
 
 # Función para extraer el texto literal de observaciones
@@ -412,7 +423,7 @@ if df is not None and not df.empty:
 
         if col_dir in df.columns and col_loc in df.columns:
             if st.button("🚀 Calcular Ruta Óptima y Validar Horarios"):
-                with st.spinner("Geolocalizando, optimizando ruta y analizando ventanas horarias (con pausa de seguridad para mapas)..."):
+                with st.spinner("Geolocalizando, optimizando ruta y analizando ventanas horarias (con respaldo de búsqueda)..."):
                     lat_depot, lon_depot = obtener_coordenadas(DEPOT_DIRECCION, DEPOT_LOCALIDAD)
                     
                     if not lat_depot or not lon_depot:
@@ -437,12 +448,11 @@ if df is not None and not df.empty:
                                 longitudes.append(None)
                             time.sleep(1.1)
                         
-                        # Guardamos las coordenadas en columnas temporales para no reconsultar el mapa
                         ruta_df_inicial['temp_lat'] = latitudes
                         ruta_df_inicial['temp_lon'] = longitudes
                         
                         if direcciones_fallidas:
-                            st.warning(f"⚠️ Las siguientes direcciones no pudieron geolocalizarse correctamente y fueron omitidas: {', '.join(direcciones_fallidas)}")
+                            st.warning(f"⚠️ Las siguientes direcciones no pudieron geolocalizarse correctamente (revisa si la calle o altura está bien escrita en el Google Sheet): {', '.join(direcciones_fallidas)}")
                         
                         if len(clientes_coords) >= 1:
                             orden_optimizado = optimizar_orden_paradas((lat_depot, lon_depot), clientes_coords)
