@@ -56,7 +56,7 @@ def cargar_todos_los_clientes():
         return pd.concat(dfs, ignore_index=True, sort=False), errores
     return pd.DataFrame(), errores
 
-# Función de búsqueda 100% infalible con múltiples variantes y respaldo por Localidad
+# Función de búsqueda con respaldo por Localidad
 @st.cache_data(ttl=3600)
 def obtener_coordenadas(direccion, localidad):
     queries = []
@@ -66,19 +66,16 @@ def obtener_coordenadas(direccion, localidad):
     
     dir_sin_s = re.sub(r's\b', '', dir_limpia, flags=re.IGNORECASE) if dir_limpia.lower().endswith('s') else None
     
-    # 1. Intento con dirección completa y localidad
     if dir_limpia and loc_limpia:
         queries.append(f"{dir_limpia}, {loc_limpia}, Buenos Aires, Argentina")
         if dir_sin_s and dir_sin_s != dir_limpia:
             queries.append(f"{dir_sin_s}, {loc_limpia}, Buenos Aires, Argentina")
             
-    # 2. Intento solo con dirección y provincia
     if dir_limpia:
         queries.append(f"{dir_limpia}, Buenos Aires, Argentina")
         if dir_sin_s and dir_sin_s != dir_limpia:
             queries.append(f"{dir_sin_s}, Buenos Aires, Argentina")
             
-    # 3. Respaldo definitivo: Si la calle exacta no existe en el mapa, ubicar por lo menos la localidad
     if loc_limpia:
         queries.append(f"{loc_limpia}, Buenos Aires, Argentina")
         
@@ -94,7 +91,6 @@ def obtener_coordenadas(direccion, localidad):
         except Exception:
             pass
             
-    # Si todo falla, devolver coordenadas por defecto de CABA / GBA para evitar que crashee
     return -34.6037, -58.3816
 
 # Función para extraer el texto literal de observaciones
@@ -168,7 +164,7 @@ def calcular_ruta_osrm(coordenadas):
     return None, None, []
 
 # Generador de PDF profesional de 2 páginas
-def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, regreso_estimado, chofer_nombre):
+def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, regreso_estimado, chofer_nombre, tiempo_descarga_min):
     pdf = FPDF(orientation='P', unit='mm', format='A4')
     
     # ==========================================
@@ -196,7 +192,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
     card_w = 44
     card_h = 16
     y_start = pdf.get_y()
-    total_descarga_min = len(ruta_df) * 30
+    total_descarga_min = len(ruta_df) * tiempo_descarga_min
     metrics = [
         ("SALIDA DE DEPOSITO", f"{hora_salida_str} hs"),
         ("DISTANCIA RUTA", f"{total_km} km"),
@@ -389,6 +385,7 @@ def generar_pdf_hoja_ruta(ruta_df, cronograma_df, total_km, hora_salida_str, reg
 
 st.sidebar.header("⚙️ Configuración del Viaje")
 hora_salida = st.sidebar.time_input("⏰ Hora de salida del camión:", value=dtime(8, 0))
+TIEMPO_DESCARGA_MIN = st.sidebar.number_input("⏱️ Tiempo de descarga por parada (min):", min_value=5, max_value=120, value=30, step=5)
 
 if st.sidebar.button("🔄 Actualizar Datos desde Google Sheets"):
     st.cache_data.clear()
@@ -430,7 +427,6 @@ if df is not None and not df.empty:
         st.markdown("---")
         st.subheader("📊 Métricas, Optimización y Control de Horarios")
         
-        TIEMPO_DESCARGA_MIN = 30
         col_dir = 'Direccion'
         col_loc = 'Localidad'
 
@@ -568,7 +564,7 @@ if df is not None and not df.empty:
                                 choferes_unicos = ruta_df['Chofer_Origen'].unique()
                                 chofer_str = ", ".join(choferes_unicos) if len(choferes_unicos) <= 2 else "Mixto / Varios"
                                 
-                                pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), tiempo_acumulado.strftime("%H:%M"), chofer_str)
+                                pdf_data = generar_pdf_hoja_ruta(ruta_df, cron_df, km, hora_salida.strftime("%H:%M"), tiempo_acumulado.strftime("%H:%M"), chofer_str, TIEMPO_DESCARGA_MIN)
                                 st.download_button(
                                     label="📄 Descargar Hoja de Ruta, LIFO y Tira de Reparto en PDF",
                                     data=pdf_data,
